@@ -1,0 +1,45 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "SPIKE Prime - Stay Connected (main.py)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pybricksdev",
+            "args": ["run", "ble", "--stay-connected", "${workspaceFolder}\\main.py"],
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "justMyCode": false,
+            "env": {"PYTHONUNBUFFERED": "1"},
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": true,
+                "clear": true,
+                "showReuseMessage": false
+            }
+        },
+        {
+            "name": "SPIKE Prime - Run Once (main.py)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pybricksdev",
+            "args": ["run", "ble", "${workspaceFolder}\\main.py"],
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "justMyCode": false,
+            "env": {"PYTHONUNBUFFERED": "1"},
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": true,
+                "clear": true,
+                "showReuseMessage": false
+            }
+        }
+    ]
+}
