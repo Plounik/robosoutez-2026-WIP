@@ -46,8 +46,16 @@ def PD(kp, kd):
     base.drive(200, power)    
     last_error = error
 
+def unload():
+    target_angle = 220
+    base_run_angle(-180, 200)
+    sorter.run_target(1500, 110, Stop.HOLD)
 
-def store():
+
+def base_run_angle(angle, speed = 500):
+    right.run_angle(speed, angle, wait=False)
+    left.run_angle(speed, angle)
+def store_short():
     global release_timer
     global scan_iter
     global push_stamps
@@ -78,7 +86,7 @@ def store():
         sorter.run_target(1500, 110, Stop.HOLD, wait=False)
 
     if  timer.time() > release_stamps[release_iter]:
-        sorter.run_target(1500, -150, Stop.HOLD, wait=False)
+        if release_iter != 3: sorter.run_target(1500, -150, Stop.HOLD, wait=False)
         release_iter += 1
 
 
@@ -96,12 +104,14 @@ while release_iter < 4:
     else:
         base.stop()
         print(2)
-    store()
+    store_short()
 base.stop()
-print(release_iter)
-# sorter.run_target(1500, 110, Stop.HOLD, wait=False)
-# wait(150)
-# sorter.run_target(1500, -150, Stop.HOLD, wait=False)
+right.run_angle(500, -270)
+base_run_angle(-450)
+right.run_angle(500, 270)
+
+
+
 
 
 wait(3000)
