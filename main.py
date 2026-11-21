@@ -4,6 +4,8 @@ from pybricks.parameters import Axis, Button, Color, Direction, Icon, Port, Side
 from pybricks.robotics import DriveBase
 from pybricks.tools import wait, StopWatch, multitask, run_task
 
+from turning import turn_to
+
 hub = PrimeHub()
 left = Motor(Port.F, Direction.COUNTERCLOCKWISE)
 right = Motor(Port.D)
@@ -45,65 +47,49 @@ def base_run_angle(angle, speed = 700):
 
 
 def base_turn_angle(angle, speed = 700):
-    right.run_angle(speed, -angle, wait=False)
-    left.run_angle(speed, angle)   
+    right.run_angle(speed, angle, wait=False)
+    left.run_angle(speed, -angle)   
 
+
+def get_frequency(speed):
+    base.drive(speed, 0)
+    b = 0
+    a = 0
+    c = []
+    while a < 2:
+        s = brick_sensor.reflection()
+        if s < 15 and release_timer.time() > 150:
+            if b == 0:
+                b = timer.time()
+            else:
+                c.append(timer.time() - b)
+                b = 0
+                a += 1
+            release_timer.reset()
+    base.stop()
+    print(c)
 
 def turn(target):
-    angle = hub.imu.rotation(Axis.Z, False) - reset_gyro
-    difference = angle + target
-    speed = 500 * (difference / abs(difference))
-    left.run(speed), right.run(-speed)
-    while 20 < abs(difference):
-        angle = hub.imu.rotation(Axis.Z, False) - reset_gyro
-        difference = angle + target
-    speed = 400 * (difference / abs(difference))
-    left.run(speed/3), right.run(-speed/3)
-    while 5 < abs(difference):
-        angle = hub.imu.rotation(Axis.Z, False) - reset_gyro
-        difference = angle + target
-    left.stop(), right.stop()
-    wait(50)
+    """Turn to an absolute CCW-positive heading relative to reset_gyro."""
+    if not turn_to(hub, left, right, reset_gyro, target, base=base):
+        raise RuntimeError("Turn did not settle")
 
 
-def turn_by(target):
-    angle = hub.imu.rotation(Axis.Z, False)
-    target = angle - target
-    difference = angle - target
-    speed = 500 * (difference / abs(difference))
-    left.run(speed), right.run(-speed)
-    while 20 < abs(difference):
-        angle = hub.imu.rotation(Axis.Z, False)
-        difference = angle - target
-    speed = 400 * (difference / abs(difference))
-    left.run(speed/2), right.run(-speed/2)
-    while 3 < abs(difference):
-        angle = hub.imu.rotation(Axis.Z, False)
-        difference = angle - target
-    left.stop(), right.stop()
+def turn_by(angle):
+    """Turn counterclockwise by angle degrees (negative turns clockwise)."""
+    turn(get_angle() + angle)
 
 
 def fix_angle(target):
-    angle = hub.imu.rotation(Axis.Z, False) - reset_gyro
-    difference = angle + target
-
-    if difference != 0:
-        speed = 100 * (difference / abs(difference))
-        left.run(speed), right.run(-speed)
-        while 1.5 < abs(difference):
-            angle = hub.imu.rotation(Axis.Z, False) - reset_gyro
-            difference = angle + target
-        left.stop(), right.stop()
+    turn(target)
 
 
 def fix_angle_drive(target):
-    angle = hub.imu.rotation(Axis.Z, False) - reset_gyro
-    difference = angle + target
+    difference = get_angle() - target
     if difference != 0:
         base.drive(200, difference * 10)
         while 1 < abs(difference):
-            angle = hub.imu.rotation(Axis.Z, False) - reset_gyro
-            difference = angle + target
+            difference = get_angle() - target
             base.drive(200, difference * 5)
         base.stop()
 
@@ -119,14 +105,83 @@ def PD(kp, kd, speed = 200):
 
 
 def print_angle(): 
-    print(f"The gyro angle is: {hub.imu.rotation(Axis.Z, False) - reset_gyro}")
+    print(f"The gyro angle is: {get_angle()}")
 
 
 def get_angle(): 
     return (hub.imu.rotation(Axis.Z, False) - reset_gyro)
 
 
-def store_reset():
+# Speeds are mm/s. Delays are ms from brick detection.
+short = {
+    "last_brick_extra_mm": 10,
+    "bricks": 4, "speed": 250, "kp": 2, "kd": 0,
+    "brick_threshold": 15, "detection_gap_ms": 250,
+    "push_delay_ms": 950, "fix_delay_ms": 270,
+    "fix_delay_step_ms": 5,
+    "heading_gain": 5, "heading_tolerance": 1,
+}
+
+long = {
+    "last_brick_extra_mm": 5,
+    "bricks": 3, "speed": 350, "kp": 2, "kd": 0,
+    "brick_threshold": 15, "detection_gap_ms": 178,
+    "push_delay_ms": 679, "fix_delay_ms": 193,
+    "fix_delay_step_ms": 5,
+    "heading_gain": 5, "heading_tolerance": 1,
+}
+
+
+def store_reset(bricks=4):
+    global final_push_distance
+    final_push_distance = None
+    global release_timer, scan_iter, push_stamps, push_iter, release_iter, fix_stamps, fix_iter
+
+    release_timer.reset()
+    scan_iter = 0
+    push_stamps = [0] * bricks
+    push_iter = 0
+    release_iter = 0
+    fix_stamps = [0] * bricks
+    fix_iter = 0
+
+
+def store(bricks=4, delay=0, profile=short):
+    global final_push_distance
+    global release_timer, scan_iter, push_stamps, push_iter, release_iter, fix_stamps, fix_iter
+
+    s = brick_sensor.reflection()
+    if scan_iter < bricks and s < profile["brick_threshold"] and release_timer.time() > profile["detection_gap_ms"]:
+        release_timer.reset()
+        push_stamps[scan_iter] = timer.time() + profile["push_delay_ms"]
+        fix_delay = profile["fix_delay_ms"] + scan_iter * profile["fix_delay_step_ms"]
+        fix_stamps[scan_iter] = timer.time() + fix_delay + delay
+        scan_iter += 1
+        hub.speaker.beep(500, 20)
+
+    if fix_iter < scan_iter and timer.time() > fix_stamps[fix_iter]:
+        fix_iter += 1
+        fixer.run_angle(1500, 360, Stop.HOLD, wait=False)
+
+    if release_iter < push_iter and sorter.angle() >= -40:
+        if release_iter != bricks - 1:
+            sorter.run_target(1500, sorter_start, Stop.HOLD, wait=False)
+        release_iter += 1
+
+    if push_iter == release_iter and push_iter < scan_iter and timer.time() > push_stamps[push_iter]:
+        if push_iter == 0 or sorter.done():
+            if push_iter == bricks - 1 and profile["last_brick_extra_mm"] > 0:
+                distance = base.distance()
+                if final_push_distance is None:
+                    final_push_distance = distance + profile["last_brick_extra_mm"]
+                if distance < final_push_distance:
+                    return
+            sorter.track_target(70)
+            push_iter += 1
+
+
+
+def single_store_reset():
     global release_timer, scan_iter, push_stamps, push_iter, release_stamps, release_iter, fix_stamps, fix_iter
 
     release_timer.reset()
@@ -139,7 +194,7 @@ def store_reset():
     fix_iter = 0
 
 
-def store(bricks = 4, delay = 0):
+def single_store(bricks = 4, delay = 0):
     global release_timer, scan_iter, push_stamps, push_iter, release_stamps, release_iter, fix_stamps, fix_iter
 
     s = brick_sensor.reflection()
@@ -164,21 +219,24 @@ def store(bricks = 4, delay = 0):
         release_iter += 1
 
 
-def line(bricks = 4, once = True):
-    store_reset()
-    angle = round(get_angle() /90, 0) * -90
+
+def line(profile=short, once=True):
+    bricks = profile["bricks"]
+    speed = profile["speed"]
+    store_reset(bricks)
+    angle = round(get_angle() /90, 0) * 90
     print(angle)
     while release_iter < bricks:
         if scan_iter < bricks:
-            PD(2, 0, 180)
+            PD(profile["kp"], profile["kd"], speed)
         elif push_iter < bricks:
-            if once: fix_angle_drive(angle)
-            base.drive(200, 0)
-            once = False
+            difference = get_angle() - angle
+            once = once and abs(difference) > profile["heading_tolerance"]
+            base.drive(speed, difference * profile["heading_gain"] if once else 0)
         else:
             base.stop()
             
-        store()
+        store(bricks, profile=profile)
 
 
 def PD_till_target_black(target):
@@ -197,9 +255,10 @@ def PD_till_target_black(target):
 
 
 def unload(count):
+    print("this")
     print_angle()
     move_by = 145
-    drive_by = -110
+    drive_by = -120
     end = 410
     sorter.run_target(1500, end - 5 - (move_by * (count - 1)))
     base.reset(0, 0)
@@ -288,10 +347,9 @@ def main():
     global reset_gyro
     base.drive(450, 0)
 
-    line()
+    line(short)
 
-    turn(-80)
-    fix_angle(-80)
+    turn(80)
     #               wait(50)
     #               base.straight(-50)
     #               base.drive(500, 30)
@@ -300,89 +358,51 @@ def main():
     sorter.run_until_stalled(-2000)
     wait(50)
 
-    store_reset()
+    single_store_reset()
     while release_iter < 1:
         if push_iter < 1:
             PD(3, 0, 180)
         else:
             wait(150)
             base.stop()
-        store(delay= 5000)
+        single_store(delay= 5000)
 
 
     base_run_angle(-180, 1500)
-    turn(-180)
+    turn(180)
     base_run_angle(650, 1500)
-    turn(-90)
-    wait(50)
-    fix_angle(-90)
-    wait(50)
+    turn(90)
     
 
     fixer.run_angle(1500, 720, Stop.HOLD, wait=False)
     sorter.run_target(1500, -80, Stop.HOLD, wait=False)
     PD_drive_distance(550, 400, target_angle= 90)
-    fix_angle(-90)
-
+    fix_angle(90)
+    wait(50)
     unload(5)
 
-    turn(-180)
+    turn(180)
     base_run_angle(-600, 1500)
-    turn(-90)
-    fix_angle(-90)
+    turn(90)
     base.reset(0, 0)
     error = PD(2, 0, 500)
     while abs(error) > 10:
         error = PD(2, 0, 500)
-    line(3)
+    line(long)
     sorter.run_target(1500, 155)
     fixer.run_angle(1500, 360, Stop.HOLD, wait=False)
 
-    PD_drive_distance(-550, 800, target_angle=90)
-    turn(-180)
+    PD_drive_distance(-650, 800, target_angle=90)
+    turn(180)
     fixer.run_angle(1500, -360, Stop.HOLD, wait=False)
 
-    PD_drive_distance(200, 400, target_angle=180)
-    unload_fast(3)
-
-
-
-
+    PD_drive_distance(250, 400, target_angle=180)
+    unload(3)
 
 
 initialize()
 
-
-# main()
-
-def get_frequency(speed):
-    base.drive(speed, 0)
-    b = 0
-    a = 0
-    c = []
-    while a < 2:
-        s = brick_sensor.reflection()
-        if s < 15 and release_timer.time() > 150:
-            if b == 0:
-                b = timer.time()
-            else:
-                c.append(timer.time() - b)
-                b = 0
-                a += 1
-            release_timer.reset()
-    base.stop()
-    return c
-    
-def meassure_min_push_time(time, min_angle_should_be=-10):
-    run_timer.reset()
-    sorter.track_target(70)
-    wait(time)
-    a = sorter.angle()
-    sorter.run_target(1500, -185)
-    return a
+main()
 
 
-
-# print(get_frequency(280))
-print(get_frequency(420))
 print(f"Run finished in {run_timer.time()/1000}s")
