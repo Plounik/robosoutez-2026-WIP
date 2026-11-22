@@ -42,8 +42,10 @@ def beep():
     hub.speaker.beep() 
 
 
-def base_run_angle(angle, speed = 700):
+def base_run_angle(angle, speed = 700, acceleration = 5000):
+    base.settings(speed, acceleration)
     base.straight(angle*0.7675)
+    base.settings(1000, 5000)
 
 
 def base_turn_angle(angle, speed = 700):
@@ -123,7 +125,7 @@ short = {
 }
 
 long = {
-    "last_brick_extra_mm": 5,
+    "last_brick_extra_mm": 15,
     "bricks": 3, "speed": 350, "kp": 2, "kd": 0,
     "brick_threshold": 15, "detection_gap_ms": 178,
     "push_delay_ms": 679, "fix_delay_ms": 193,
@@ -254,11 +256,11 @@ def PD_till_target_black(target):
     base_run_angle(405)
 
 
-def unload(count):
+def unload(count, extra_distance_foward = 0, extra_distance_backwards = 0):
     print("this")
     print_angle()
     move_by = 145
-    drive_by = -120
+    drive_by = -125
     end = 410
     sorter.run_target(1500, end - 5 - (move_by * (count - 1)))
     base.reset(0, 0)
@@ -273,16 +275,15 @@ def unload(count):
         elif i == count - 2:
             sorter.run_target(1500, end)
         base.straight(drive_by)
-        print(i)
     wait(10)
-    base.straight(-100)
+    base.straight(-100 - extra_distance_backwards)
     sorter.run_target(500, sorter_start, wait=False)
     
     fixer.run_angle(1000, 270)
     goal = -count * 115
     distance = goal - base.distance()
     base.settings(150)
-    base.straight(distance)
+    base.straight(distance + extra_distance_foward)
     base.settings(800)
     base.straight(-150, wait=True)
 
@@ -368,7 +369,7 @@ def main():
         single_store(delay= 5000)
 
 
-    base_run_angle(-180, 1500)
+    base_run_angle(-180, 1500, acceleration= 1000)
     turn(180)
     base_run_angle(650, 1500)
     turn(90)
@@ -376,13 +377,15 @@ def main():
 
     fixer.run_angle(1500, 720, Stop.HOLD, wait=False)
     sorter.run_target(1500, -80, Stop.HOLD, wait=False)
-    PD_drive_distance(550, 400, target_angle= 90)
+    PD_drive_distance(600, 400, target_angle= 90)
     fix_angle(90)
     wait(50)
+    base.settings(800, 3000)
     unload(5)
+    base.settings(800, 4000)
 
     turn(180)
-    base_run_angle(-600, 1500)
+    base_run_angle(-670, 1500)
     turn(90)
     base.reset(0, 0)
     error = PD(2, 0, 500)
@@ -392,17 +395,18 @@ def main():
     sorter.run_target(1500, 155)
     fixer.run_angle(1500, 360, Stop.HOLD, wait=False)
 
-    PD_drive_distance(-650, 800, target_angle=90)
+    PD_drive_distance(-750, 800, target_angle=89)
     turn(180)
     fixer.run_angle(1500, -360, Stop.HOLD, wait=False)
 
-    PD_drive_distance(250, 400, target_angle=180)
-    unload(3)
+    PD_drive_distance(320, 400, target_angle=180)
+    unload(3, extra_distance_foward= 60, extra_distance_backwards= 30)
 
 
 initialize()
 
 main()
+
 
 
 print(f"Run finished in {run_timer.time()/1000}s")
